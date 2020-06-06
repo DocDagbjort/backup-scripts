@@ -3,20 +3,19 @@
 # Script for pushing LVM snapshots to an SSH host
 # Author: Markus Koskinen - License: BSD
 #
-# Requires: configured ssh keys, gpg, lvmtools etc
+# Requires: configured ssh keys, gpg, lvmtools, time etc
 #
 # Remember to configure some rotating of the resulting
 # backup files.
 
 ##############################################
-# Configurations
+# Configuration
 ##############################################
 
 # LVM Volume group name and volume name, check with "lvdisplay"
-VOLGROUP="changeme"
-VOLNAME="changeme"
+VOLGROUP="name_of_volume_group"
+VOLNAME="name_of_volume"
 # This file contains the symmetric passphrase, any random string
-
 # Leave blank to skip use of gpg
 PASSFILE=
 
@@ -26,8 +25,9 @@ PASSFILE=
 SNAPSIZE="10G"
 
 # Target host and user, with public/private keys configured
-REMOTE="user@hostname.something"
+REMOTE="user@hostname.tld"
 # A directory within the bucket
+# Remember to create this in advance
 REMOTEDIR="/home/user/wherever/"
 # Arbitrary snapshot name, used for backup filename as well
 # Just needs to be unique and descriptive
@@ -35,7 +35,7 @@ SNAPNAME="snap_${VOLNAME}"
 # SSH port (usually 22)
 SSH_PORT=22
 #Leave blank to use the user's default SSH key, or whatever is in .ssh/config for the hostname
-SSH_KEY=/home/whatever/.ssh/key.pub
+SSH_KEY=/root/.ssh/key_for_backups
 
 #Leave blank to skip gzip
 GZIP_LEVEL=5
@@ -45,7 +45,7 @@ GZIP_LEVEL=5
 ##############################################
 
 # Create a snapshot (WARNING: currently set to 10G changes)
-#/usr/sbin/lvcreate -L${SNAPSIZE} -s -n "${SNAPNAME}" "/dev/${VOLGROUP}/${VOLNAME}"
+/usr/sbin/lvcreate -L${SNAPSIZE} -s -n "${SNAPNAME}" "/dev/${VOLGROUP}/${VOLNAME}"
 
 
 if [ "$GZIP_LEVEL" == "" ]; then
@@ -68,9 +68,9 @@ else
   SSH_KEY_CALL="/usr/bin/ssh -i "${SSH_KEY}" -p ${SSH_PORT} "${REMOTE}" "
 fi
 
-
-echo ${GPG_CALL}
-echo ${GZIP_CALL}
+#For debugging
+#echo ${GPG_CALL}
+#echo ${GZIP_CALL}
 
 FULL_CALL="/usr/bin/time /bin/dd if=\"/dev/${VOLGROUP}/${SNAPNAME}\" bs=128k |"
 FULL_CALL=" "${FULL_CALL}" "${GZIP_CALL}" "
@@ -78,16 +78,12 @@ FULL_CALL=" "${FULL_CALL}" "${GPG_CALL}" "
 FULL_CALL=" "${FULL_CALL}" "${SSH_KEY_CALL}" "
 FULL_CALL=" "${FULL_CALL}" \"/bin/cat > ${REMOTEDIR}/${SNAPNAME}-$(date +%Y%m%d-%H%M.dd"${SUFFIX}")\" "
 
+echo "Running: "
+echo ""
 echo ${FULL_CALL}
 
-# DD the image through gzip and gsutil
-# With GPG, gzip forked as --fast in other process.
-# shellcheck disable=SC2029
-#/usr/bin/time /bin/dd if="/dev/${VOLGROUP}/${SNAPNAME}" bs=128k |\
-#   /bin/nice -n 19 /bin/gzip --fast -|\
-#   /bin/nice -n 19 /usr/bin/gpg -z 0 -c --batch --no-tty --passphrase-file "${PASSFILE}" |\
-#   /usr/bin/ssh -p ${SSH_PORT} "${REMOTE}" \
-#      "/bin/cat > ${REMOTEDIR}/${SNAPNAME}-$(date +%Y%m%d-%H%M.dd.gz.gpg)"
+eval ${FULL_CALL}
 
 # Drop the snapshot
-#/usr/sbin/lvremove -f "/dev/${VOLGROUP}/${SNAPNAME}"
+echo ""
+/usr/sbin/lvremove -f "/dev/${VOLGROUP}/${SNAPNAME}"
